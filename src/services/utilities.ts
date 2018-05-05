@@ -180,6 +180,8 @@ namespace ts {
         switch (node.parent.kind) {
             case SyntaxKind.TypeReference:
                 return true;
+            case SyntaxKind.ImportType:
+                return !(node.parent as ImportTypeNode).isTypeOf;
             case SyntaxKind.ExpressionWithTypeArguments:
                 return !isExpressionWithTypeArgumentsInClassExtendsClause(<ExpressionWithTypeArguments>node.parent);
         }
@@ -1120,11 +1122,6 @@ namespace ts {
         }
 
         return false;
-    }
-
-    export function hasTrailingDirectorySeparator(path: string) {
-        const lastCharacter = path.charAt(path.length - 1);
-        return lastCharacter === "/" || lastCharacter === "\\";
     }
 
     export function isInReferenceComment(sourceFile: SourceFile, position: number): boolean {

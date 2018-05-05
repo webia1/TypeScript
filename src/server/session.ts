@@ -865,7 +865,7 @@ namespace ts.server {
                 symLinkedProjects = this.projectService.getSymlinkedProjects(scriptInfo);
             }
             // filter handles case when 'projects' is undefined
-            projects = filter(projects, p => p.languageServiceEnabled);
+            projects = filter(projects, p => p.languageServiceEnabled && !p.isOrphan());
             if ((!projects || !projects.length) && !symLinkedProjects) {
                 return Errors.ThrowNoProject();
             }
@@ -1112,7 +1112,8 @@ namespace ts.server {
                     textSpan: this.toLocationTextSpan(s.textSpan, scriptInfo),
                     hintSpan: this.toLocationTextSpan(s.hintSpan, scriptInfo),
                     bannerText: s.bannerText,
-                    autoCollapse: s.autoCollapse
+                    autoCollapse: s.autoCollapse,
+                    kind: s.kind
                 }));
             }
             else {
@@ -1336,7 +1337,7 @@ namespace ts.server {
                 symLinkedProjects ? { projects, symLinkedProjects } : projects,
                 (project, info) => {
                     let result: protocol.CompileOnSaveAffectedFileListSingleProject;
-                    if (project.compileOnSaveEnabled && project.languageServiceEnabled && !project.getCompilationSettings().noEmit) {
+                    if (project.compileOnSaveEnabled && project.languageServiceEnabled && !project.isOrphan() && !project.getCompilationSettings().noEmit) {
                         result = {
                             projectFileName: project.getProjectName(),
                             fileNames: project.getCompileOnSaveAffectedFileList(info),

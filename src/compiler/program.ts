@@ -57,7 +57,7 @@ namespace ts {
             return currentDirectory;
         }
 
-        return getNormalizedPathFromPathComponents(commonPathComponents);
+        return getPathFromPathComponents(commonPathComponents);
     }
 
     interface OutputFingerprint {
@@ -1296,9 +1296,9 @@ namespace ts {
                 Debug.assert(!!sourceFile.bindDiagnostics);
 
                 const isCheckJs = isCheckJsEnabledForFile(sourceFile, options);
-                // By default, only type-check .ts, .tsx, and 'External' files (external files are added by plugins)
+                // By default, only type-check .ts, .tsx, 'Deferred' and 'External' files (external files are added by plugins)
                 const includeBindAndCheckDiagnostics = sourceFile.scriptKind === ScriptKind.TS || sourceFile.scriptKind === ScriptKind.TSX ||
-                    sourceFile.scriptKind === ScriptKind.External || isCheckJs;
+                    sourceFile.scriptKind === ScriptKind.External || isCheckJs || sourceFile.scriptKind === ScriptKind.Deferred;
                 const bindDiagnostics = includeBindAndCheckDiagnostics ? sourceFile.bindDiagnostics : emptyArray;
                 const checkDiagnostics = includeBindAndCheckDiagnostics ? typeChecker.getDiagnostics(sourceFile, cancellationToken) : emptyArray;
                 const fileProcessingDiagnosticsInFile = fileProcessingDiagnostics.getDiagnostics(sourceFile.fileName);
@@ -1988,7 +1988,7 @@ namespace ts {
                     }
 
                     const isFromNodeModulesSearch = resolution.isExternalLibraryImport;
-                    const isJsFile = !extensionIsTypeScript(resolution.extension);
+                    const isJsFile = !resolutionExtensionIsTypeScriptOrJson(resolution.extension);
                     const isJsFileFromNodeModules = isFromNodeModulesSearch && isJsFile;
                     const resolvedFileName = resolution.resolvedFileName;
 
@@ -2062,6 +2062,10 @@ namespace ts {
         }
 
         function verifyCompilerOptions() {
+            if (options.strictPropertyInitialization && !options.strictNullChecks) {
+                createDiagnosticForOptionName(Diagnostics.Option_0_cannot_be_specified_without_specifying_option_1, "strictPropertyInitialization", "strictNullChecks");
+            }
+
             if (options.isolatedModules) {
                 if (options.declaration) {
                     createDiagnosticForOptionName(Diagnostics.Option_0_cannot_be_specified_with_option_1, "declaration", "isolatedModules");
@@ -2193,6 +2197,12 @@ namespace ts {
                 else if (options.module === undefined && firstNonAmbientExternalModuleSourceFile) {
                     const span = getErrorSpanForNode(firstNonAmbientExternalModuleSourceFile, firstNonAmbientExternalModuleSourceFile.externalModuleIndicator);
                     programDiagnostics.add(createFileDiagnostic(firstNonAmbientExternalModuleSourceFile, span.start, span.length, Diagnostics.Cannot_compile_modules_using_option_0_unless_the_module_flag_is_amd_or_system, options.out ? "out" : "outFile"));
+                }
+            }
+
+            if (options.resolveJsonModule) {
+                if (getEmitModuleResolutionKind(options) !== ModuleResolutionKind.NodeJs) {
+                    createDiagnosticForOptionName(Diagnostics.Option_resolveJsonModule_cannot_be_specified_without_node_module_resolution_strategy, "resolveJsonModule");
                 }
             }
 
@@ -2351,8 +2361,9 @@ namespace ts {
         function getCompilerOptionsObjectLiteralSyntax() {
             if (_compilerOptionsObjectLiteralSyntax === undefined) {
                 _compilerOptionsObjectLiteralSyntax = null; // tslint:disable-line:no-null-keyword
-                if (options.configFile && options.configFile.jsonObject) {
-                    for (const prop of getPropertyAssignment(options.configFile.jsonObject, "compilerOptions")) {
+                const jsonObjectLiteral = getTsConfigObjectLiteralExpression(options.configFile);
+                if (jsonObjectLiteral) {
+                    for (const prop of getPropertyAssignment(jsonObjectLiteral, "compilerOptions")) {
                         if (isObjectLiteralExpression(prop.initializer)) {
                             _compilerOptionsObjectLiteralSyntax = prop.initializer;
                             break;
@@ -2422,6 +2433,7 @@ namespace ts {
         switch (extension) {
             case Extension.Ts:
             case Extension.Dts:
+            case Extension.Json: // Since module is resolved to json file only when --resolveJsonModule, we dont need further check
                 // These are always allowed.
                 return undefined;
             case Extension.Tsx:
